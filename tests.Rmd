@@ -1,0 +1,149 @@
+---
+title: "tests"
+output: html_document
+date: "2024-10-21"
+---
+
+Firstly, we load the libraries
+
+```{r setup, include=FALSE}
+library(TSP)
+library(GA)
+library(tidyverse) # Data manipulation
+```
+
+## Fitness function
+
+Our fitness function will calculate the negative total distance of the path indicated by the chromosome, because we use GAs to minimize the problem.
+
+```{r cars}
+fitness_function <- function(route, dist_matrix) {
+  # Add start node to the route (We are not using it)
+  route <- c(route, route[1])
+
+  total_distance <- 0
+  for (i in 1:(length(route) - 1)) {
+    total_distance <- total_distance + dist_matrix[route[i], route[i+1]]
+  }
+  return(-total_distance)  # Minimize total distance, so return negative
+}
+```
+
+## Crossover functions
+
+Permutation order crossover (**Cal refer, no funciona**)
+
+```{r pressure, echo=FALSE}
+order_crossover <- function(parent1, parent2) {
+  n <- length(parent1)
+  
+  print(length(parent1))
+  print(length(parent2))
+  
+  # Randomly select two crossover points
+  crossover_points <- sort(sample(1:n, 2))
+  start <- crossover_points[1]
+  end <- crossover_points[2]
+  
+  # Create the child with NA values
+  child <- rep(NA, n)
+  
+  # Fill the child with the segment from the first parent
+  child[start:end] <- parent1[start:end]
+  
+  # Fill the remaining positions with the genes from the second parent
+  p2_index <- 1
+  for (i in 1:n) {
+    if (is.na(child[i])) {
+      while (parent2[p2_index] %in% child) {
+        p2_index <- p2_index + 1
+      }
+      child[i] <- parent2[p2_index]
+    }
+  }
+  
+  return(child)
+}
+```
+
+## Mutation functions
+
+Swap mutation permutation (**Cal refer, no funciona**)
+
+```{r}
+swap_mutation <- function(chromosome) {
+  # Ensure the chromosome is a vector
+  n <- length(chromosome)
+  
+  print(n)
+  
+  # Randomly select two positions to swap
+  positions <- sample(1:n, 2)
+  
+  # Swap the genes at the selected positions
+  temp <- chromosome[positions[1]]
+  chromosome[positions[1]] <- chromosome[positions[2]]
+  chromosome[positions[2]] <- temp
+  
+  return(chromosome)
+}
+```
+
+## GA algorithm
+
+Run the functions:
+
+```{r}
+calculate_distance_matrix <- function(coords) {
+  num_cities <- nrow(coords)
+  
+  # Matrix to store the distances
+  dist_matrix <- matrix(0, nrow = num_cities, ncol = num_cities)
+  
+  # Calculate the distances between every pair of cities
+  for (i in 1:num_cities) {
+    for (j in 1:num_cities) {
+      # Calculate Euclidean distance between city i and city j
+      dist_matrix[i, j] <- sqrt((coords[i, 1] - coords[j, 1])^2 + (coords[i, 2] - coords[j, 2])^2)
+    }
+  }
+  
+  return(dist_matrix)
+}
+```
+
+```{r}
+ins <- read_TSPLIB("instances/berlin52.tsp")
+
+print(ins)
+```
+
+```{r}
+dist_matrix <- calculate_distance_matrix(ins)
+
+print(dim(dist_matrix))
+```
+
+```{r}
+population_size <- 50
+max_generations <- 200
+crossover_prob <- 0.8
+mutation_prob <- 0.1
+
+ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
+    fitness = function(route) fitness_function(route, dist_matrix),
+    lower = 1, upper = nrow(dist_matrix),  # Cities are indexed from 1 to num_cities
+    popSize = population_size,  # Population size
+    maxiter = max_generations,  # Number of generations
+    pmutation = mutation_prob,  # Mutation probability
+    pcrossover = crossover_prob,  # Crossover probability
+    crossover = gaperm_oxCrossover,#order_crossover,  # Crossover function
+    mutation = gaperm_swMutation #swap_mutation  # Mutation function
+  ) #OJU: estem fent les funcions de mutation i crossover que implementa la llibreria, no les nostres perquè alguna cosa fa que petin :)
+
+res <- ga_result@solution
+best_fitness <- -ga_result@fitnessValue  # Convert back from negative distance to positive
+
+summary(ga_result)
+plot(ga_result)
+```
