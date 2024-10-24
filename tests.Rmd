@@ -34,36 +34,57 @@ fitness_function <- function(route, dist_matrix) {
 Permutation order crossover (**Cal refer, no funciona**)
 
 ```{r pressure, echo=FALSE}
-order_crossover <- function(parent1, parent2) {
+order_crossover <- function(ga_info, parents) {
+
+  id_parent1 <- parents[1]
+  id_parent2 <- parents[2]
+  
+  parent1 <- ga_info@population[id_parent1, ]
+  parent2 <- ga_info@population[id_parent2, ]
+
   n <- length(parent1)
-  
-  print(length(parent1))
-  print(length(parent2))
-  
+
   # Randomly select two crossover points
   crossover_points <- sort(sample(1:n, 2))
   start <- crossover_points[1]
   end <- crossover_points[2]
-  
+
   # Create the child with NA values
-  child <- rep(NA, n)
-  
+  child1 <- rep(NA, n)
+  child2 <- rep(NA, n)
+
   # Fill the child with the segment from the first parent
-  child[start:end] <- parent1[start:end]
-  
+  child1[start:end] <- parent1[start:end]
+  child2[1:start] <- parent1[1:start]
+  child2[end:n] <- parent1[end:n] 
+
   # Fill the remaining positions with the genes from the second parent
-  p2_index <- 1
+  
+  p2_index_ch1 <- 1
+  p2_index_ch2 <- 1
   for (i in 1:n) {
-    if (is.na(child[i])) {
-      while (parent2[p2_index] %in% child) {
-        p2_index <- p2_index + 1
+    if (is.na(child1[i])) {
+      while (parent2[p2_index_ch1] %in% child1) {
+        p2_index_ch1 <- p2_index_ch1 + 1
       }
-      child[i] <- parent2[p2_index]
+      child1[i] <- parent2[p2_index_ch1]
+    }
+    
+    if (is.na(child2[i])) {
+      while (parent2[p2_index_ch2] %in% child2) {
+        p2_index_ch2  <- p2_index_ch2 + 1
+      }
+      child2[i] <- parent2[p2_index_ch2]
     }
   }
+
+  children <- rbind(child1, child2) 
+  fitness <- rep(NA, 2) # They have no fintess value sine they are different from the parents
   
-  return(child)
+  return(list(children = children, fitness = fitness))
 }
+
+
 ```
 
 ## Mutation functions
@@ -71,11 +92,11 @@ order_crossover <- function(parent1, parent2) {
 Swap mutation permutation (**Cal refer, no funciona**)
 
 ```{r}
-swap_mutation <- function(chromosome) {
-  # Ensure the chromosome is a vector
-  n <- length(chromosome)
+swap_mutation <- function(ga_info, chromosome_id) {
+
+  chromosome <- ga_info@population[chromosome_id, ]
   
-  print(n)
+  n <- length(chromosome)
   
   # Randomly select two positions to swap
   positions <- sample(1:n, 2)
@@ -137,8 +158,8 @@ ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
     maxiter = max_generations,  # Number of generations
     pmutation = mutation_prob,  # Mutation probability
     pcrossover = crossover_prob,  # Crossover probability
-    crossover = gaperm_oxCrossover,#order_crossover,  # Crossover function
-    mutation = gaperm_swMutation #swap_mutation  # Mutation function
+    crossover = order_crossover, #gaperm_oxCrossover,  # Crossover function
+    mutation = swap_mutation #gaperm_swMutation  # Mutation function
   ) #OJU: estem fent les funcions de mutation i crossover que implementa la llibreria, no les nostres perquè alguna cosa fa que petin :)
 
 res <- ga_result@solution
