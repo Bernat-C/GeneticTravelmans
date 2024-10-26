@@ -91,8 +91,6 @@ order_crossover <- function(ga_info, parents) {
 
 ```{r pressure, echo=FALSE}
 partially_matched_crossover <- function(ga_info, parents) {
-
-  print("Performing Partially matched crossover")
   id_parent1 <- parents[1]
   id_parent2 <- parents[2]
   
@@ -101,46 +99,108 @@ partially_matched_crossover <- function(ga_info, parents) {
 
   n <- length(parent1)
 
-  # Randomly select two crossover points
+  # Step 1: Select two crossover points
   crossover_points <- sort(sample(1:n, 2))
   start <- crossover_points[1]
   end <- crossover_points[2]
 
-  # Create the children with NA values
+  # Step 2: Initialize children with NA values
   child1 <- rep(NA, n)
   child2 <- rep(NA, n)
 
-  # Copy segment from parent 1 to child 1 and parent 2 to child 2
+  # Step 3: Copy crossover segment from each parent
   child1[start:end] <- parent1[start:end]
   child2[start:end] <- parent2[start:end]
 
-  # Fill in remaining positions for child1 using the order in parent2
+  # Step 4: Fill in genes from parent2 to child1 and parent1 to child2 outside the crossover segment
   for (i in 1:n) {
-    if (is.na(child1[i]) && !(parent2[i] %in% child1)) {
-      child1[i] <- parent2[i]
+    # Fill for child1 from parent2
+    if (is.na(child1[i])) {
+      gene <- parent2[i]
+      while (gene %in% child1[start:end]) {
+        gene <- parent2[which(parent1 == gene)]
+      }
+      child1[i] <- gene
+    }
+    # Fill for child2 from parent1
+    if (is.na(child2[i])) {
+      gene <- parent1[i]
+      while (gene %in% child2[start:end]) {
+        gene <- parent1[which(parent2 == gene)]
+      }
+      child2[i] <- gene
     }
   }
 
-  # Fill in remaining positions for child2 using the order in parent1
-  for (i in 1:n) {
-    if (is.na(child2[i]) && !(parent1[i] %in% child2)) {
-      child2[i] <- parent1[i]
-    }
-  }
-
-  # Combine children into matrix and create fitness placeholder
+  # Combine children into a matrix and initialize fitness
   children <- rbind(child1, child2) 
-  fitness <- rep(NA, 2) # Placeholder for fitness
+  fitness <- rep(NA, 2) # Fitness placeholder
   
-  print("Crossover done")
   return(list(children = children, fitness = fitness))
 }
 
-
-
-
-
 ```
+
+
+# Cycle Crossover
+
+```{r pressure, echo=FALSE}
+cycle_crossover <- function(ga_info, parents) {
+  id_parent1 <- parents[1]
+  id_parent2 <- parents[2]
+
+  # Retrieve parents from the GA population
+  parent1 <- ga_info@population[id_parent1, ]
+  parent2 <- ga_info@population[id_parent2, ]
+
+  n <- length(parent1)
+
+  # Initialize children with NA values
+  child1 <- rep(NA, n)
+  child2 <- rep(NA, n)
+
+  # Track cycles and fill each child based on the cycle
+  cycle <- 1
+  remaining_positions <- 1:n
+
+  while (length(remaining_positions) > 0) {
+    # Start at the first unassigned position
+    start <- remaining_positions[1]
+    pos <- start
+    cycle_positions <- integer(0)
+
+    # Follow the cycle until we return to the start position
+    repeat {
+      cycle_positions <- c(cycle_positions, pos)
+      gene <- parent1[pos]
+      pos <- which(parent2 == gene)
+      if (pos == start) break
+    }
+
+    # Copy genes to children based on the cycle index
+    if (cycle %% 2 == 1) {
+      # Odd cycles go directly to child1 from parent1, and child2 from parent2
+      child1[cycle_positions] <- parent1[cycle_positions]
+      child2[cycle_positions] <- parent2[cycle_positions]
+    } else {
+      # Even cycles go to child1 from parent2, and child2 from parent1
+      child1[cycle_positions] <- parent2[cycle_positions]
+      child2[cycle_positions] <- parent1[cycle_positions]
+    }
+
+    # Update remaining positions and cycle count
+    remaining_positions <- setdiff(remaining_positions, cycle_positions)
+    cycle <- cycle + 1
+  }
+
+  # Combine children into a matrix and initialize fitness
+  children <- rbind(child1, child2)
+  fitness <- rep(NA, 2) # Placeholder for fitness values
+  
+  return(list(children = children, fitness = fitness))
+}
+```
+
 ## Mutation functions
 
 Swap mutation permutation (**Cal refer, no funciona**)
@@ -200,10 +260,11 @@ print(dim(dist_matrix))
 ```
 
 ```{r}
-population_size <- 50
-max_generations <- 200
+population_size <- 100
+max_generations <- 1000
 crossover_prob <- 0.8
-mutation_prob <- 0.1
+mutation_prob <- 0.2
+elitism <- 5
 
 ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
     fitness = function(route) fitness_function(route, dist_matrix),
@@ -212,8 +273,9 @@ ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
     maxiter = max_generations,  # Number of generations
     pmutation = mutation_prob,  # Mutation probability
     pcrossover = crossover_prob,  # Crossover probability
-    crossover = partially_matched_crossover, #gaperm_oxCrossover,  # Crossover function
-    mutation = swap_mutation #gaperm_swMutation  # Mutation function
+    crossover = cycle_crossover, #gaperm_oxCrossover,  # Crossover function
+    mutation = swap_mutation, #gaperm_swMutation  # Mutation function
+    elitism = elitism
   ) #OJU: estem fent les funcions de mutation i crossover que implementa la llibreria, no les nostres perquè alguna cosa fa que petin :)
 
 res <- ga_result@solution
@@ -222,3 +284,25 @@ best_fitness <- -ga_result@fitnessValue  # Convert back from negative distance t
 summary(ga_result)
 plot(ga_result)
 ```
+
+```{r}
+best_route <- c(ga_result@solution, ga_result@solution[1])  # Loop back to the start city
+
+# Plot the route on a scatter plot
+plot_tsp_route <- function(coords, route) {
+  plot(coords, type = "n", main = "Optimized TSP Route", xlab = "X Coordinate", ylab = "Y Coordinate")
+  points(coords, pch = 16, col = "blue")  # Plot cities
+  text(coords, labels = 1:nrow(coords), pos = 4, cex = 0.8, col = "blue")  # Label cities
+
+# Draw the path
+  for (i in 1:(length(route) - 1)) {
+    city_from <- route[i]
+    city_to <- route[i + 1]
+    lines(coords[c(city_from, city_to), ], col = "red", lwd = 2)
+  }
+}
+
+# Execute the plot function with coordinates and best route
+plot_tsp_route(ins, best_route)
+```
+
