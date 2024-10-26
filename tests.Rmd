@@ -1,7 +1,6 @@
 ---
 title: "tests"
 output: html_document
-date: "2024-10-21"
 ---
 
 Firstly, we load the libraries
@@ -201,6 +200,92 @@ cycle_crossover <- function(ga_info, parents) {
 }
 ```
 
+Edge Recombination Crossover (ERX)
+
+```{r}
+edge_recombination_crossover <- function(ga_info, parents) {
+  id_parent1 <- parents[1]
+  id_parent2 <- parents[2]
+  
+  parent1 <- ga_info@population[id_parent1, ]
+  parent2 <- ga_info@population[id_parent2, ]
+  
+  n <- length(parent1)
+  
+  # Step 1: Create the edge map
+  create_edge_map <- function(p1, p2) {
+    edge_map <- vector("list", n)
+    
+    for (i in 1:n) {
+      neighbors <- c()
+      # Add neighbors from parent1
+      idx <- which(p1 == i)
+      neighbors <- c(neighbors, p1[(idx - 1 - 1) %% n + 1], p1[(idx + 1 - 1) %% n + 1])
+      
+      # Add neighbors from parent2
+      idx <- which(p2 == i)
+      neighbors <- c(neighbors, p2[(idx - 1 - 1) %% n + 1], p2[(idx + 1 - 1) %% n + 1])
+      
+      # Remove duplicates
+      edge_map[[i]] <- unique(neighbors)
+    }
+    
+    return(edge_map)
+  }
+  
+  edge_map <- create_edge_map(parent1, parent2)
+  
+  # Step 2: Create child by starting from a random city
+  generate_child <- function(edge_map) {
+    child <- numeric(n)
+    visited <- rep(FALSE, n)
+    
+    # Start from a random city
+    current <- sample(1:n, 1)
+    child[1] <- current
+    visited[current] <- TRUE
+    
+    for (i in 2:n) {
+      # Remove the current city from its neighbors' lists
+      for (j in 1:n) {
+        edge_map[[j]] <- setdiff(edge_map[[j]], current)
+      }
+      
+      # Get the neighbors of the current city
+      neighbors <- edge_map[[current]]
+      
+      # Choose the next city
+      if (length(neighbors) > 0) {
+        # Select the neighbor with the fewest edges in its list
+        next_city <- neighbors[which.min(sapply(neighbors, function(x) length(edge_map[[x]])))]
+      } else {
+        # If no neighbors left, pick an unvisited city at random
+        next_city <- sample(which(!visited), 1)
+      }
+      
+      # Add the selected city to the child and mark it as visited
+      child[i] <- next_city
+      visited[next_city] <- TRUE
+      current <- next_city
+    }
+    
+    return(child)
+  }
+  
+  # Generate two children
+  child1 <- generate_child(edge_map)
+  child2 <- generate_child(edge_map)
+  
+  # Combine children into a matrix and initialize fitness
+  children <- rbind(child1, child2)
+  fitness <- rep(NA, 2) # Fitness placeholder
+  
+  return(list(children = children, fitness = fitness))
+}
+
+```
+
+
 ## Mutation functions
 
 Swap mutation permutation (**Cal refer, no funciona**)
@@ -222,6 +307,58 @@ swap_mutation <- function(ga_info, chromosome_id) {
   
   return(chromosome)
 }
+```
+
+Inverse mutation
+
+```{r}
+inverse_mutation <- function(ga_info, chromosome_id) {
+  
+  # Get the chromosome to mutate
+  chromosome <- ga_info@population[chromosome_id, ]
+  
+  # Get the number of genes in the chromosome
+  n <- length(chromosome)
+  
+  # Randomly select two positions for the inversion
+  positions <- sort(sample(1:n, 2))
+  
+  # Reverse the sequence between the selected positions
+  chromosome[positions[1]:positions[2]] <- rev(chromosome[positions[1]:positions[2]])
+  
+  return(chromosome)
+}
+
+```
+
+Insert mutation:
+
+```{r}
+insert_mutation <- function(ga_info, chromosome_id) {
+  
+  # Get the chromosome to mutate
+  chromosome <- ga_info@population[chromosome_id, ]
+  
+  # Get the number of genes in the chromosome
+  n <- length(chromosome)
+  
+  # Randomly select two positions: one to remove from and one to insert into
+  positions <- sample(1:n, 2)
+  pos_from <- positions[1]
+  pos_to <- positions[2]
+  
+  # Extract the gene at pos_from
+  gene <- chromosome[pos_from]
+  
+  # Remove the gene at pos_from
+  chromosome <- chromosome[-pos_from]
+  
+  # Insert the gene at pos_to
+  chromosome <- append(chromosome, gene, after = pos_to - 1)
+  
+  return(chromosome)
+}
+
 ```
 
 ## GA algorithm
@@ -248,7 +385,7 @@ calculate_distance_matrix <- function(coords) {
 ```
 
 ```{r}
-ins <- read_TSPLIB("instances/berlin52.tsp")
+ins <- read_TSPLIB("instances/bayg29.tsp")
 
 print(ins)
 ```
@@ -261,10 +398,10 @@ print(dim(dist_matrix))
 
 ```{r}
 population_size <- 100
-max_generations <- 1000
+max_generations <- 500
 crossover_prob <- 0.8
-mutation_prob <- 0.2
-elitism <- 5
+mutation_prob <- 0.1
+elitism <- 50
 
 ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
     fitness = function(route) fitness_function(route, dist_matrix),
@@ -274,7 +411,7 @@ ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
     pmutation = mutation_prob,  # Mutation probability
     pcrossover = crossover_prob,  # Crossover probability
     crossover = cycle_crossover, #gaperm_oxCrossover,  # Crossover function
-    mutation = swap_mutation, #gaperm_swMutation  # Mutation function
+    mutation = insert_mutation, #gaperm_swMutation  # Mutation function
     elitism = elitism
   ) #OJU: estem fent les funcions de mutation i crossover que implementa la llibreria, no les nostres perquè alguna cosa fa que petin :)
 
