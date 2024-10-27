@@ -361,6 +361,27 @@ insert_mutation <- function(ga_info, chromosome_id) {
 
 ```
 
+Scramble mutation 
+
+```{r}
+scramble_mutation <- function(ga_info, chromosome_id) {
+  
+  # Get the chromosome to mutate
+  chromosome <- ga_info@population[chromosome_id, ]
+  
+  # Get the number of genes in the chromosome
+  n <- length(chromosome)
+  
+  # Randomly select two positions for the inversion
+  positions <- sort(sample(1:n, 2))
+  
+  # Reverse the sequence between the selected positions
+  chromosome[positions[1]:positions[2]] <- sample(chromosome[positions[1]:positions[2]])
+  
+  return(chromosome)
+}
+```
+
 ## GA algorithm
 
 Run the functions:
@@ -382,50 +403,7 @@ calculate_distance_matrix <- function(coords) {
   
   return(dist_matrix)
 }
-```
 
-```{r}
-ins <- read_TSPLIB("instances/bayg29.tsp")
-
-print(ins)
-```
-
-```{r}
-dist_matrix <- calculate_distance_matrix(ins)
-
-print(dim(dist_matrix))
-```
-
-```{r}
-population_size <- 100
-max_generations <- 500
-crossover_prob <- 0.8
-mutation_prob <- 0.1
-elitism <- 50
-
-ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
-    fitness = function(route) fitness_function(route, dist_matrix),
-    lower = 1, upper = nrow(dist_matrix),  # Cities are indexed from 1 to num_cities
-    popSize = population_size,  # Population size
-    maxiter = max_generations,  # Number of generations
-    pmutation = mutation_prob,  # Mutation probability
-    pcrossover = crossover_prob,  # Crossover probability
-    crossover = cycle_crossover, #gaperm_oxCrossover,  # Crossover function
-    mutation = insert_mutation, #gaperm_swMutation  # Mutation function
-    elitism = elitism
-  ) #OJU: estem fent les funcions de mutation i crossover que implementa la llibreria, no les nostres perquè alguna cosa fa que petin :)
-
-res <- ga_result@solution
-best_fitness <- -ga_result@fitnessValue  # Convert back from negative distance to positive
-
-summary(ga_result)
-plot(ga_result)
-```
-
-```{r}
-best_route <- c(ga_result@solution, ga_result@solution[1])  # Loop back to the start city
-
-# Plot the route on a scatter plot
 plot_tsp_route <- function(coords, route) {
   plot(coords, type = "n", main = "Optimized TSP Route", xlab = "X Coordinate", ylab = "Y Coordinate")
   points(coords, pch = 16, col = "blue")  # Plot cities
@@ -438,8 +416,75 @@ plot_tsp_route <- function(coords, route) {
     lines(coords[c(city_from, city_to), ], col = "red", lwd = 2)
   }
 }
+```
 
-# Execute the plot function with coordinates and best route
+```{r}
+ins <- read_TSPLIB("instances/berlin52.tsp")
+
+print(ins)
+```
+
+```{r}
+dist_matrix <- calculate_distance_matrix(ins)
+
+print(dim(dist_matrix))
+```
+
+```{r}
+population_size <- 500
+max_generations <- 500
+crossover_prob <- 0.8
+mutation_prob <- 0.07
+elitism <- 100
+
+ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
+    fitness = function(route) fitness_function(route, dist_matrix),
+    lower = 1, upper = nrow(dist_matrix),  # Cities are indexed from 1 to num_cities
+    popSize = population_size,  # Population size
+    maxiter = max_generations,  # Number of generations
+    pmutation = mutation_prob,  # Mutation probability
+    pcrossover = crossover_prob,  # Crossover probability
+    crossover = order_crossover, #gaperm_oxCrossover,  # Crossover function: cycle_crossover order_crossover partially_matched_crossover edge_recombination_crossover
+    mutation = inverse_mutation, #gaperm_swMutation  # Mutation function swap_mutation inverse_mutation scramble_mutation insert_mutation
+    keepBest = TRUE,
+    elitism = elitism
+  )
+
+summary(ga_result)
+```
+
+```{r}
+# Plot
+best_route <- c(ga_result@solution, ga_result@solution[1])  # Loop back to the start city
 plot_tsp_route(ins, best_route)
+```
+```{r}
+library(parallel)
+library(doParallel)
+```
+
+
+ISLANDS GENETIC ALGORITHM
+
+```{r}
+population_size <- 500
+max_generations <- 800
+crossover_prob <- 0.8
+mutation_prob <- 0.07
+elitism <- 100
+
+ga_result <- gaisl(type = "permutation",  # Chromosomes are permutations (tours)
+    fitness = function(route) fitness_function(route, dist_matrix),
+    lower = 1, upper = nrow(dist_matrix),  # Cities are indexed from 1 to num_cities
+    popSize = population_size,  # Population size
+    maxiter = max_generations,  # Number of generations
+    pmutation = mutation_prob,  # Mutation probability
+    pcrossover = crossover_prob,  # Crossover probability
+    crossover = order_crossover, #gaperm_oxCrossover,  # Crossover function: cycle_crossover order_crossover partially_matched_crossover edge_recombination_crossover
+    mutation = inverse_mutation, #gaperm_swMutation  # Mutation function swap_mutation inverse_mutation scramble_mutation insert_mutation
+    elitism = elitism
+  )
+
+summary(ga_result)
 ```
 
