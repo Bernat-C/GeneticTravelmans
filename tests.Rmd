@@ -286,6 +286,129 @@ edge_recombination_crossover <- function(ga_info, parents) {
 ```
 
 
+### Greegy crossover
+```{r}
+adaptive_greedy_subpath_crossover <- function(ga_info, parents, distance_matrix) {
+  id_parent1 <- parents[1]
+  id_parent2 <- parents[2]
+  
+  parent1 <- ga_info@population[id_parent1, ]
+  parent2 <- ga_info@population[id_parent2, ]
+  n <- length(parent1)
+  
+  # Initialize children with the first city of each parent
+  child1 <- rep(0, n)
+  child2 <- rep(0, n)
+  child1[1] <- parent1[1]
+  child2[1] <- parent2[1]
+  
+  for (i in 1:(n - 1)) {
+    for (child_idx in 1:2) {
+      child <- if (child_idx == 1) child1 else child2
+      parent <- if (child_idx == 1) parent1 else parent2
+      
+      current_city <- child[i]
+      if (is.na(current_city) || current_city == 0) next
+      
+      # Get positions and next cities with additional checks
+      pos_in_parent1 <- match(current_city, parent1)
+      pos_in_parent2 <- match(current_city, parent2)
+      
+      next_in_parent1 <- if (!is.na(pos_in_parent1) && pos_in_parent1 < n) parent1[pos_in_parent1 + 1] else parent1[1]
+      next_in_parent2 <- if (!is.na(pos_in_parent2) && pos_in_parent2 < n) parent2[pos_in_parent2 + 1] else parent2[1]
+      
+      # Safe distance calculations with NA handling
+      dist1 <- if (!is.na(next_in_parent1) && next_in_parent1 > 0) distance_matrix[current_city, next_in_parent1] else Inf
+      dist2 <- if (!is.na(next_in_parent2) && next_in_parent2 > 0) distance_matrix[current_city, next_in_parent2] else Inf
+      
+      # Select next city with fallback for unvisited cities
+      next_city <- if (!is.infinite(dist1) && !is.infinite(dist2)) {
+        if (dist1 < dist2) next_in_parent1 else next_in_parent2
+      } else if (!is.infinite(dist1)) {
+        next_in_parent1
+      } else if (!is.infinite(dist2)) {
+        next_in_parent2
+      } else {
+        # Fallback: select from truly unvisited cities
+        unvisited_cities <- setdiff(c(parent1, parent2), child)
+        if (length(unvisited_cities) > 0) unvisited_cities[1] else NA
+      }
+      
+      # Assign if not already in child
+      if (!is.null(next_city) && !(next_city %in% child)) {
+        if (child_idx == 1) child1[i + 1] <- next_city else child2[i + 1] <- next_city
+      }
+    }
+  }
+  
+  # Ensure unique city visits
+  child1 <- enforce_unique_cities(child1, parent1, parent2, distance_matrix)
+  child2 <- enforce_unique_cities(child2, parent1, parent2, distance_matrix)
+  
+  # Final validity check: no zeros, full coverage, and uniqueness
+  if (any(child1 == 0) || any(child2 == 0) || length(unique(child1)) < n || length(unique(child2)) < n) {
+    stop("Error: Children are incomplete or contain duplicates.")
+  }
+
+  return(list(children = rbind(child1, child2), fitness = rep(NA, 2)))
+}
+
+# Improved enforce_unique_cities function
+enforce_unique_cities <- function(child, parent1, parent2, distance_matrix) {
+  unique_cities <- unique(child[child > 0])
+  missing_cities <- setdiff(c(parent1, parent2), unique_cities)
+  
+  # Replace zero entries with missing cities
+  zero_indices <- which(child == 0)
+  for (i in seq_along(zero_indices)) {
+    if (i <= length(missing_cities)) {
+      child[zero_indices[i]] <- missing_cities[i]
+    }
+  }
+  
+  # Verify uniqueness again
+  duplicates <- which(duplicated(child))
+  if (length(duplicates) > 0) {
+    for (i in duplicates) {
+      if (length(missing_cities) > 0) {
+        child[i] <- missing_cities[1]
+        missing_cities <- missing_cities[-1]
+      }
+    }
+  }
+  
+  return(child)
+}
+
+```
+
+### Random crossover
+```{r}
+random_crossover_selection <- function(ga_info, parents, distance_matrix) {
+  crossover_operators <- list(
+    adaptive_greedy_subpath_crossover,
+    cycle_crossover,
+    order_crossover
+  )
+  
+  # Define the probabilities for each crossover operator
+  probabilities <- c(0.33, 0.33, 0.33)
+  
+  # Select one of the crossover operators based on the probabilities
+  random_operator <- sample(1:3, 1, prob = probabilities)
+  
+  # Call the selected crossover operator and return the result
+  if (random_operator == 1) {
+    op <- crossover_operators[[random_operator]]
+    return(op(ga_info, parents, distance_matrix))
+  } else {
+    op <- crossover_operators[[random_operator]]
+    return(op(ga_info, parents)) 
+  }
+}
+```
+
+
 ## Mutation functions
 
 Swap mutation permutation (**Cal refer, no funciona**)
@@ -434,8 +557,8 @@ print(dim(dist_matrix))
 population_size <- 500
 max_generations <- 500
 crossover_prob <- 0.8
-mutation_prob <- 0.07
-elitism <- 100
+mutation_prob <- 0.1
+elitism <- base::max(1, round(population_size*0.2))
 
 ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
     fitness = function(route) fitness_function(route, dist_matrix),
@@ -444,7 +567,7 @@ ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
     maxiter = max_generations,  # Number of generations
     pmutation = mutation_prob,  # Mutation probability
     pcrossover = crossover_prob,  # Crossover probability
-    crossover = order_crossover, #gaperm_oxCrossover,  # Crossover function: cycle_crossover order_crossover partially_matched_crossover edge_recombination_crossover
+    crossover = function(ga_info, parents) adaptive_greedy_subpath_crossover(ga_info, parents, dist_matrix),  # Pass dist_matrix to crossover
     mutation = inverse_mutation, #gaperm_swMutation  # Mutation function swap_mutation inverse_mutation scramble_mutation insert_mutation
     keepBest = TRUE,
     elitism = elitism
