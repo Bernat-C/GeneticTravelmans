@@ -86,7 +86,7 @@ order_crossover <- function(ga_info, parents) {
 
 ```
 
-# Partially Matched Crossover
+Partially Matched Crossover
 
 ```{r pressure, echo=FALSE}
 partially_matched_crossover <- function(ga_info, parents) {
@@ -140,8 +140,7 @@ partially_matched_crossover <- function(ga_info, parents) {
 
 ```
 
-
-# Cycle Crossover
+Cycle Crossover
 
 ```{r pressure, echo=FALSE}
 cycle_crossover <- function(ga_info, parents) {
@@ -287,6 +286,7 @@ edge_recombination_crossover <- function(ga_info, parents) {
 
 
 ### Greedy crossover NO FUNCIONA
+
 ```{r}
 
 get_greedy_child <- function(parent1, parent2, distance_matrix){
@@ -363,7 +363,8 @@ adaptive_greedy_subpath_crossover <- function(ga_info, parents, distance_matrix)
 
 ```
 
-### Maximal Preservative Crossover
+
+Maximal Preservative Crossover
 
 ```{r}
 maximal_preservative_crossover <- function(ga_info, parents) {
@@ -422,7 +423,6 @@ maximal_preservative_crossover <- function(ga_info, parents) {
 }
 
 ```
-
 
 ## Mutation functions
 
@@ -503,7 +503,7 @@ insert_mutation <- function(ga_info, chromosome_id) {
 
 ```
 
-Scramble mutation 
+Scramble mutation
 
 ```{r}
 scramble_mutation <- function(ga_info, chromosome_id) {
@@ -561,7 +561,7 @@ plot_tsp_route <- function(coords, route) {
 ```
 
 ```{r}
-ins <- read_TSPLIB("instances/berlin52.tsp")
+ins <- read_TSPLIB("instances/tsp225.tsp")
 
 print(ins)
 ```
@@ -574,7 +574,7 @@ print(dim(dist_matrix))
 
 ```{r}
 population_size <- 500
-max_generations <- 500
+max_generations <- 1000
 crossover_prob <- 0.8
 mutation_prob <- 0.1
 elitism <- base::max(1, round(population_size*0.2))
@@ -586,7 +586,7 @@ ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
     maxiter = max_generations,  # Number of generations
     pmutation = mutation_prob,  # Mutation probability
     pcrossover = crossover_prob,  # Crossover probability
-    crossover = function(ga_info, parents) random_crossover_selection(ga_info, parents, dist_matrix),  # Pass dist_matrix to crossover
+    crossover = cycle_crossover,  # Pass dist_matrix to crossover
     mutation = inverse_mutation, #gaperm_swMutation  # Mutation function swap_mutation inverse_mutation scramble_mutation insert_mutation
     keepBest = TRUE,
     elitism = elitism
@@ -621,8 +621,8 @@ mutation_operators <- list(
   "scramble_mutation" = scramble_mutation)
 
 elitism <- c(0.1, 0.2, 0.3)
-mutation_probs <- c(0.1, 0.3, 0.2)
-crossover_probs <- c(0.6, 0.9, 0.8) 
+mutation_probs <- c(0.1, 0.2, 0.3)
+crossover_probs <- c(0.6, 0.8, 0.9) 
 population_size <- 500
 
 # Prepare to store results
@@ -634,11 +634,7 @@ dir.create(output_dir, showWarnings = FALSE)
 run_ga_with_params <- function(crossover_op, mutation_op, elitism_val, mut_prob, cross_prob, dist_matrix, population_size) {
   # Define a wrapper for the crossover operation to handle distance_matrix when needed
   crossover_wrapper <- function(ga_info, parents) {
-    if (identical(crossover_op, adaptive_greedy_subpath_crossover)) {
-      return(crossover_op(ga_info, parents, dist_matrix))
-    } else {
-      return(crossover_op(ga_info, parents))
-    }
+    return(crossover_op(ga_info, parents))
   }
   
   # Run the genetic algorithm with the crossover wrapper
@@ -678,7 +674,6 @@ write.csv(data.frame(crossover = character(), mutation = character(), elitism = 
                      mutation_prob = numeric(), crossover_prob = numeric(), best_fitness = numeric(), best_solution = character()),
           file = csv_file, row.names = FALSE, append = FALSE)
 
-# Modify function to append results to the CSV
 run_and_save_ga <- function(crossover_name, mutation_name, elitism_val, mut_prob, cross_prob, dist_matrix, population_size) {
   crossover_op <- crossover_operators[[crossover_name]]
   mutation_op <- mutation_operators[[mutation_name]]
@@ -687,12 +682,7 @@ run_and_save_ga <- function(crossover_name, mutation_name, elitism_val, mut_prob
   
   ga_result <- run_ga_with_params(crossover_op, mutation_op, elitism_val, mut_prob, cross_prob, dist_matrix, population_size)
   
-  fitness_history <- tryCatch({
-    ga_result@fitness
-  }, error = function(e) {
-    message("Fitness history not directly available; using summary.")
-    summary(ga_result)$fitness
-  })
+  fitness_history <- ga_result@fitness
   
   result_data <- data.frame(
     crossover = crossover_name,
@@ -737,18 +727,11 @@ for (crossover_name in names(crossover_operators)) {
 
 ```
 
-```{r}
-# Convert results to data frame and save as CSV
-results_df <- do.call(rbind, lapply(results, as.data.frame))
-write.csv(results_df, file = paste0(output_dir, "/grid_search_results.csv"), row.names = FALSE)
-```
-
 
 ```{r}
 library(parallel)
 library(doParallel)
 ```
-
 
 ISLANDS GENETIC ALGORITHM
 
@@ -773,4 +756,3 @@ ga_result <- gaisl(type = "permutation",  # Chromosomes are permutations (tours)
 
 summary(ga_result)
 ```
-
