@@ -554,7 +554,7 @@ print(dim(dist_matrix))
 
 ```{r}
 population_size <- 500
-max_generations <- 1000
+max_generations <- 3000
 crossover_prob <- 0.8
 mutation_prob <- 0.1
 elitism <- base::max(1, round(population_size*0.2))
@@ -566,7 +566,7 @@ ga_result <- ga(type = "permutation",  # Chromosomes are permutations (tours)
     maxiter = max_generations,  # Number of generations
     pmutation = mutation_prob,  # Mutation probability
     pcrossover = crossover_prob,  # Crossover probability
-    crossover = cycle_crossover,  # Pass dist_matrix to crossover
+    crossover = order_crossover,  # Pass dist_matrix to crossover
     mutation = inverse_mutation, #gaperm_swMutation  # Mutation function swap_mutation inverse_mutation scramble_mutation insert_mutation
     keepBest = TRUE,
     elitism = elitism
