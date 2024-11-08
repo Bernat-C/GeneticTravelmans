@@ -1,0 +1,625 @@
+---
+title: "tests"
+authors: "Pau Bosch & Bernat Comas"
+output: html_document
+---
+
+Firstly, we load the libraries
+
+```{r setup, include=FALSE}
+library(TSP)
+library(GA)
+library(tidyverse) # Data manipulation
+```
+
+## Fitness function
+
+Our fitness function will calculate the negative total distance of the path indicated by the chromosome, because we use GAs to minimize the problem.
+
+```{r cars}
+fitness_function <- function(route, dist_matrix) {
+  # Add start node to the route (We are not using it)
+  route <- c(route, route[1])
+
+  total_distance <- 0
+  for (i in 1:(length(route) - 1)) {
+    total_distance <- total_distance + dist_matrix[route[i], route[i+1]]
+  }
+  return(-total_distance)  # Minimize total distance, so return negative
+}
+```
+
+## Crossover functions
+
+#### Permutation order crossover
+
+```{r pressure, echo=FALSE}
+order_crossover <- function(ga_info, parents) {
+
+  id_parent1 <- parents[1]
+  id_parent2 <- parents[2]
+  
+  parent1 <- ga_info@population[id_parent1, ]
+  parent2 <- ga_info@population[id_parent2, ]
+
+  n <- length(parent1)
+
+  # Randomly select two crossover points
+  crossover_points <- sort(sample(1:n, 2))
+  start <- crossover_points[1]
+  end <- crossover_points[2]
+
+  # Create the child with NA values
+  child1 <- rep(NA, n)
+  child2 <- rep(NA, n)
+
+  # Fill the child with the segment from the first parent
+  child1[start:end] <- parent1[start:end]
+  child2[1:start] <- parent1[1:start]
+  child2[end:n] <- parent1[end:n] 
+
+  # Fill the remaining positions with the genes from the second parent
+  
+  p2_index_ch1 <- 1
+  p2_index_ch2 <- 1
+  for (i in 1:n) {
+    if (is.na(child1[i])) {
+      while (parent2[p2_index_ch1] %in% child1) {
+        p2_index_ch1 <- p2_index_ch1 + 1
+      }
+      child1[i] <- parent2[p2_index_ch1]
+    }
+    
+    if (is.na(child2[i])) {
+      while (parent2[p2_index_ch2] %in% child2) {
+        p2_index_ch2  <- p2_index_ch2 + 1
+      }
+      child2[i] <- parent2[p2_index_ch2]
+    }
+  }
+
+  children <- rbind(child1, child2) 
+  fitness <- rep(NA, 2) # They have no fintess value sine they are different from the parents
+  
+  return(list(children = children, fitness = fitness))
+}
+
+
+```
+
+#### Partially Matched Crossover
+
+```{r pressure, echo=FALSE}
+partially_matched_crossover <- function(ga_info, parents) {
+  id_parent1 <- parents[1]
+  id_parent2 <- parents[2]
+  
+  parent1 <- ga_info@population[id_parent1, ]
+  parent2 <- ga_info@population[id_parent2, ]
+
+  n <- length(parent1)
+
+  # Step 1: Select two crossover points
+  crossover_points <- sort(sample(1:n, 2))
+  start <- crossover_points[1]
+  end <- crossover_points[2]
+
+  # Step 2: Initialize children with NA values
+  child1 <- rep(NA, n)
+  child2 <- rep(NA, n)
+
+  # Step 3: Copy crossover segment from each parent
+  child1[start:end] <- parent1[start:end]
+  child2[start:end] <- parent2[start:end]
+
+  # Step 4: Fill in genes from parent2 to child1 and parent1 to child2 outside the crossover segment
+  for (i in 1:n) {
+    # Fill for child1 from parent2
+    if (is.na(child1[i])) {
+      gene <- parent2[i]
+      while (gene %in% child1[start:end]) {
+        gene <- parent2[which(parent1 == gene)]
+      }
+      child1[i] <- gene
+    }
+    # Fill for child2 from parent1
+    if (is.na(child2[i])) {
+      gene <- parent1[i]
+      while (gene %in% child2[start:end]) {
+        gene <- parent1[which(parent2 == gene)]
+      }
+      child2[i] <- gene
+    }
+  }
+
+  # Combine children into a matrix and initialize fitness
+  children <- rbind(child1, child2) 
+  fitness <- rep(NA, 2) # Fitness placeholder
+  
+  return(list(children = children, fitness = fitness))
+}
+
+```
+
+#### Cycle Crossover
+
+```{r pressure, echo=FALSE}
+cycle_crossover <- function(ga_info, parents) {
+  id_parent1 <- parents[1]
+  id_parent2 <- parents[2]
+
+  # Retrieve parents from the GA population
+  parent1 <- ga_info@population[id_parent1, ]
+  parent2 <- ga_info@population[id_parent2, ]
+
+  n <- length(parent1)
+
+  # Initialize children with NA values
+  child1 <- rep(NA, n)
+  child2 <- rep(NA, n)
+
+  # Track cycles and fill each child based on the cycle
+  cycle <- 1
+  remaining_positions <- 1:n
+
+  while (length(remaining_positions) > 0) {
+    # Start at the first unassigned position
+    start <- remaining_positions[1]
+    pos <- start
+    cycle_positions <- integer(0)
+
+    # Follow the cycle until we return to the start position
+    repeat {
+      cycle_positions <- c(cycle_positions, pos)
+      gene <- parent1[pos]
+      pos <- which(parent2 == gene)
+      if (pos == start) break
+    }
+
+    # Copy genes to children based on the cycle index
+    if (cycle %% 2 == 1) {
+      # Odd cycles go directly to child1 from parent1, and child2 from parent2
+      child1[cycle_positions] <- parent1[cycle_positions]
+      child2[cycle_positions] <- parent2[cycle_positions]
+    } else {
+      # Even cycles go to child1 from parent2, and child2 from parent1
+      child1[cycle_positions] <- parent2[cycle_positions]
+      child2[cycle_positions] <- parent1[cycle_positions]
+    }
+
+    # Update remaining positions and cycle count
+    remaining_positions <- setdiff(remaining_positions, cycle_positions)
+    cycle <- cycle + 1
+  }
+
+  # Combine children into a matrix and initialize fitness
+  children <- rbind(child1, child2)
+  fitness <- rep(NA, 2) # Placeholder for fitness values
+  
+  return(list(children = children, fitness = fitness))
+}
+```
+
+#### Maximal Preservative Crossover
+
+```{r}
+maximal_preservative_crossover <- function(ga_info, parents) {
+
+  # Identify parents by their indices in the population
+  id_parent1 <- parents[1]
+  id_parent2 <- parents[2]
+  
+  # Retrieve the parent chromosomes from the population
+  parent1 <- ga_info@population[id_parent1, ]
+  parent2 <- ga_info@population[id_parent2, ]
+  n <- length(parent1)
+  
+  # Initialize children as NA to be filled later
+  child1 <- rep(NA, n)
+  child2 <- rep(NA, n)
+  
+  # Step 1: Select a random contiguous segment in Parent 1
+  segment_start <- sample(1:(n-1), 1)
+  segment_end <- sample((segment_start + 1):n, 1)
+  
+  # Copy the selected segment from Parent 1 to Child 1
+  child1[segment_start:segment_end] <- parent1[segment_start:segment_end]
+  child2[segment_start:segment_end] <- parent2[segment_start:segment_end]
+  
+  # Function to fill remaining positions from other parent
+  fill_remaining_positions <- function(child, parent, segment) {
+    current_pos <- 1
+    for (i in 1:n) {
+      if (!(parent[i] %in% segment)) {
+        while (!is.na(child[current_pos])) {
+          current_pos <- current_pos + 1
+        }
+        child[current_pos] <- parent[i]
+      }
+    }
+    return(child)
+  }
+  
+  # Step 2: Fill remaining cities from Parent 2 for Child 1 and from Parent 1 for Child 2
+  child1 <- fill_remaining_positions(child1, parent2, parent1[segment_start:segment_end])
+  child2 <- fill_remaining_positions(child2, parent1, parent2[segment_start:segment_end])
+
+  # Final validation to ensure no duplicates and correct length
+  if (length(unique(child1)) != n || any(is.na(child1))) {
+    print("Invalid child1 detected. Returning parents.")
+    return(list(children = rbind(parent1, parent2), fitness = rep(NA, 2)))
+  }
+  
+  if (length(unique(child2)) != n || any(is.na(child2))) {
+    print("Invalid child2 detected. Returning parents.")
+    return(list(children = rbind(parent1, parent2), fitness = rep(NA, 2)))
+  }
+  
+  return(list(children = rbind(child1, child2), fitness = rep(NA, 2)))
+}
+
+```
+
+## Mutation functions
+
+#### Swap mutation permutation
+
+```{r}
+swap_mutation <- function(ga_info, chromosome_id) {
+
+  chromosome <- ga_info@population[chromosome_id, ]
+  
+  n <- length(chromosome)
+  
+  # Randomly select two positions to swap
+  positions <- sample(1:n, 2)
+  
+  # Swap the genes at the selected positions
+  temp <- chromosome[positions[1]]
+  chromosome[positions[1]] <- chromosome[positions[2]]
+  chromosome[positions[2]] <- temp
+
+  if (length(chromosome) != 52){
+    print(chromosome)
+  }
+
+return(chromosome)
+}
+```
+
+#### Inverse mutation
+
+```{r}
+inverse_mutation <- function(ga_info, chromosome_id) {
+  
+  # Get the chromosome to mutate
+  chromosome <- ga_info@population[chromosome_id, ]
+  
+  # Get the number of genes in the chromosome
+  n <- length(chromosome)
+  
+  # Randomly select two positions for the inversion
+  positions <- sort(sample(1:n, 2))
+  
+  # Reverse the sequence between the selected positions
+  chromosome[positions[1]:positions[2]] <- rev(chromosome[positions[1]:positions[2]])
+  
+  return(chromosome)
+}
+
+```
+
+#### Insert mutation:
+
+```{r}
+insert_mutation <- function(ga_info, chromosome_id) {
+  
+  # Get the chromosome to mutate
+  chromosome <- ga_info@population[chromosome_id, ]
+  
+  # Get the number of genes in the chromosome
+  n <- length(chromosome)
+  
+  # Randomly select two positions: one to remove from and one to insert into
+  positions <- sample(1:n, 2)
+  pos_from <- positions[1]
+  pos_to <- positions[2]
+  
+  # Extract the gene at pos_from
+  gene <- chromosome[pos_from]
+  
+  # Remove the gene at pos_from
+  chromosome <- chromosome[-pos_from]
+  
+  # Insert the gene at pos_to
+  chromosome <- append(chromosome, gene, after = pos_to - 1)
+  
+  return(chromosome)
+}
+
+```
+
+#### Scramble mutation
+
+```{r}
+scramble_mutation <- function(ga_info, chromosome_id) {
+  
+  # Get the chromosome to mutate
+  chromosome <- ga_info@population[chromosome_id, ]
+  
+  # Get the number of genes in the chromosome
+  n <- length(chromosome)
+  
+  # Randomly select two positions for the inversion
+  positions <- sort(sample(1:n, 2))
+  
+  # Reverse the sequence between the selected positions
+  chromosome[positions[1]:positions[2]] <- sample(chromosome[positions[1]:positions[2]])
+  
+  return(chromosome)
+}
+```
+
+## GA algorithm
+
+Run the functions:
+
+```{r}
+calculate_distance_matrix <- function(coords) {
+  num_cities <- nrow(coords)
+  
+  # Matrix to store the distances
+  dist_matrix <- matrix(0, nrow = num_cities, ncol = num_cities)
+  
+  # Calculate the distances between every pair of cities
+  for (i in 1:num_cities) {
+    for (j in 1:num_cities) {
+      # Calculate Euclidean distance between city i and city j
+      dist_matrix[i, j] <- sqrt((coords[i, 1] - coords[j, 1])^2 + (coords[i, 2] - coords[j, 2])^2)
+    }
+  }
+  
+  return(dist_matrix)
+}
+
+plot_tsp_route <- function(coords, route) {
+  plot(coords, type = "n", main = "Optimized TSP Route", xlab = "X Coordinate", ylab = "Y Coordinate")
+  points(coords, pch = 16, col = "blue")  # Plot cities
+  text(coords, labels = 1:nrow(coords), pos = 4, cex = 0.8, col = "blue")  # Label cities
+
+  for (i in 1:(length(route) - 1)) {
+    city_from <- route[i]
+    city_to <- route[i + 1]
+    lines(coords[c(city_from, city_to), ], col = "red", lwd = 2)
+  }
+}
+```
+
+```{r}
+ins <- read_TSPLIB("instances/berlin52.tsp")
+
+print(ins)
+```
+
+```{r}
+dist_matrix <- calculate_distance_matrix(ins)
+
+print(dim(dist_matrix))
+```
+
+```{r}
+population_size <- 500
+max_generations <- 50000
+crossover_prob <- 0.6
+mutation_prob <- 0.2
+elitism <- base::max(1, round(population_size*0.2))
+convergence_criteria <- 100  # Number of generations with no improvement on the best fitness.
+
+
+ga_result <- ga(type = "permutation",
+    fitness = function(route) fitness_function(route, dist_matrix),
+    lower = 1, upper = nrow(dist_matrix),
+    maxiter = max_generations,
+    popSize = population_size,  # Population size
+    pmutation = mutation_prob,  # Mutation probability
+    pcrossover = crossover_prob,  # Crossover probability
+    crossover = order_crossover,
+    mutation = inverse_mutation,
+    keepBest = TRUE,
+    elitism = elitism,
+    run = convergence_criteria
+  )
+
+summary(ga_result)
+plot(ga_result)
+
+```
+
+```{r}
+# Plot
+best_route <- c(ga_result@solution, ga_result@solution[1])  # Loop back to the start city
+plot_tsp_route(ins, best_route)
+```
+
+## Perform grid search
+
+```{r}
+# Define the parameter grid
+crossover_operators <- list(
+  "order" = order_crossover,
+  "partially_matched" = partially_matched_crossover,
+  "maximal_preservative" = maximal_preservative_crossover,
+  "cycle" = cycle_crossover
+  )
+
+mutation_operators <- list(
+  "swap_mutation" = swap_mutation,
+  "inverse_mutation" = inverse_mutation,
+  "insert_mutation" = insert_mutation,
+  "scramble_mutation" = scramble_mutation)
+
+elitism <- c(0.1, 0.2, 0.3)
+mutation_probs <- c(0.1, 0.2, 0.3)
+crossover_probs <- c(0.6, 0.8, 0.9) 
+population_size <- 500
+
+# Prepare to store results
+results <- list()
+output_dir <- "./GA_results"
+dir.create(output_dir, showWarnings = FALSE)
+
+# Define a function to run the GA with specific parameters
+run_ga_with_params <- function(crossover_op, mutation_op, elitism_val, mut_prob, cross_prob, dist_matrix, population_size) {
+  crossover_wrapper <- function(ga_info, parents) {
+    return(crossover_op(ga_info, parents))
+  }
+  
+  ga <- ga(
+    type = "permutation",
+    fitness = function(route) fitness_function(route, dist_matrix),
+    lower = 1, upper = nrow(dist_matrix),
+    popSize = population_size,
+    maxiter = 500,
+    elitism = base::max(1, round(population_size * elitism_val)),
+    pmutation = mut_prob,
+    pcrossover = cross_prob,
+    crossover = crossover_wrapper,
+    mutation = mutation_op,
+    keepBest = TRUE,
+    monitor = NULL
+  )
+  return(ga)
+}
+
+generate_comb_name <- function(crossover_name, mutation_name, elitism_val, mut_prob, cross_prob) {
+  paste0(
+    crossover_name, 
+    "_", mutation_name, 
+    "_elitism_", elitism_val, 
+    "_mutprob_", mut_prob, 
+    "_crossprob_", cross_prob
+  )
+}
+
+
+output_dir <- "./GA_results"
+dir.create(output_dir, showWarnings = FALSE)
+csv_file <- paste0(output_dir, "/all_results.csv")
+
+write.csv(data.frame(crossover = character(), mutation = character(), elitism = numeric(),
+                     mutation_prob = numeric(), crossover_prob = numeric(), best_fitness = numeric(), best_solution = character()),
+          file = csv_file, row.names = FALSE, append = FALSE)
+
+run_and_save_ga <- function(crossover_name, mutation_name, elitism_val, mut_prob, cross_prob, dist_matrix, population_size) {
+  crossover_op <- crossover_operators[[crossover_name]]
+  mutation_op <- mutation_operators[[mutation_name]]
+  
+  comb_name <- generate_comb_name(crossover_name, mutation_name, elitism_val, mut_prob, cross_prob)
+  
+  ga_result <- run_ga_with_params(crossover_op, mutation_op, elitism_val, mut_prob, cross_prob, dist_matrix, population_size)
+  
+  fitness_history <- ga_result@fitness
+  
+  result_data <- data.frame(
+    crossover = crossover_name,
+    mutation = mutation_name,
+    elitism = elitism_val,
+    mutation_prob = mut_prob,
+    crossover_prob = cross_prob,
+    best_fitness = max(ga_result@fitness),
+    best_solution = paste(ga_result@solution, collapse = "|")
+  )
+  
+  print(paste("Saving result for combination:", comb_name))
+  
+  write.table(result_data, file = csv_file, row.names = FALSE, col.names = FALSE, sep = ",", append = TRUE)
+
+  png(file = paste0(output_dir, "/learning_curve_", comb_name, ".png"))
+  plot(ga_result)
+  dev.off()
+
+  best_route <- c(ga_result@solution, ga_result@solution[1])  # Loop back to the start
+  png(file = paste0(output_dir, "/solution_curve_", comb_name, ".png"))
+  plot_tsp_route(ins, best_route)
+  dev.off()
+}
+
+for (crossover_name in names(crossover_operators)) {
+  for (mutation_name in names(mutation_operators)) {
+    for (elitism_val in elitism) {
+      for (mut_prob in mutation_probs) {
+        for (cross_prob in crossover_probs) {
+          print(paste("Running GA with crossover:", crossover_name, 
+                      "mutation:", mutation_name, 
+                      "elitism:", elitism_val, 
+                      "mutation_prob:", mut_prob, 
+                      "crossover_prob:", cross_prob))
+          run_and_save_ga(crossover_name, mutation_name, elitism_val, mut_prob, cross_prob, dist_matrix, population_size)
+        }
+      }
+    }
+  }
+}
+
+```
+
+## Islands Genetic Algorithm
+
+```{r}
+library(parallel)
+library(doParallel)
+```
+
+```{r}
+population_size <- 500
+max_generations <- 800
+crossover_prob <- 0.8
+mutation_prob <- 0.07
+elitism <- 100
+
+ga_result <- gaisl(type = "permutation",
+    fitness = function(route) fitness_function(route, dist_matrix),
+    lower = 1, upper = nrow(dist_matrix),
+    popSize = population_size,  # Population size
+    maxiter = max_generations,  # Number of generations
+    pmutation = mutation_prob,  # Mutation probability
+    pcrossover = crossover_prob,  # Crossover probability
+    crossover = order_crossover,
+    mutation = inverse_mutation,
+    elitism = elitism
+  )
+
+summary(ga_result)
+```
+
+# Optimal Result Extraction
+
+```{r}
+# Check what is the optimal fitness
+opt_bayg29 <- c(1, 28, 6, 12, 9, 26, 3, 29, 5, 21, 2, 20, 10, 4, 15, 18, 14, 17, 22, 11, 19, 25, 7, 23, 8, 27, 16, 13, 24)
+
+opt_berlin52 <- c(1, 49, 32, 45, 19, 41, 8, 9, 10, 43, 33, 51, 11, 52, 14, 13, 47, 26, 27, 28, 12, 25, 4, 6, 15, 5, 24, 48, 38, 37, 40, 39, 36, 35, 34, 44, 46, 16, 29, 50, 20, 23, 30, 2, 7, 42, 21, 17, 3, 18, 31, 22)
+
+opt_tsp225 <- c(1, 200, 198, 197, 195, 194, 218, 193, 196, 192, 191, 205, 189, 27, 188, 187, 186, 185, 184, 182, 181, 180, 179, 178, 177, 176, 174, 173, 172, 171, 170, 169, 168, 212, 214, 167, 166, 165, 164, 213, 158, 163, 162, 161, 160, 159, 157, 156, 155, 154, 153, 152, 151, 150, 149, 148, 147, 146, 145, 144, 143, 201, 142, 141, 140, 139, 138, 137, 136, 183, 135, 134, 215, 132, 131, 211, 130, 222, 129, 128, 127, 126, 125, 124, 123, 122, 121, 175, 120, 119, 118, 117, 116, 223, 115, 114, 113, 112, 111, 110, 109, 108, 107, 106, 105, 220, 104, 103, 102, 101, 100, 99, 98, 97, 96, 95, 209, 94, 93, 92, 91, 90, 89, 88, 87, 210, 86, 85, 84, 83, 82, 221, 81, 80, 79, 78, 77, 217, 219, 216, 76, 75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64, 63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 50, 51, 49, 207, 2, 47, 225, 190, 133, 199, 224, 48, 45, 46, 44, 43, 42, 41, 40, 39, 38, 37, 36, 34, 33, 35, 32, 31, 206, 202, 30, 29, 28, 204, 26, 25, 208, 24, 23, 22, 21, 20, 203, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3)
+
+print("BAYG29")
+print(length(opt_bayg29))
+ins <- read_TSPLIB("instances/bayg29.tsp")
+dist_matrix <- calculate_distance_matrix(ins)
+print(fitness_function(opt_bayg29,dist_matrix))
+plot_tsp_route(ins, opt_bayg29)
+
+print("BERLIN52")
+print(length(opt_berlin52))
+ins <- read_TSPLIB("instances/berlin52.tsp")
+dist_matrix <- calculate_distance_matrix(ins)
+print(fitness_function(opt_berlin52,dist_matrix))
+plot_tsp_route(ins, opt_berlin52)
+
+print("TSP225")
+print(length(opt_tsp225))
+ins <- read_TSPLIB("instances/tsp225.tsp")
+dist_matrix <- calculate_distance_matrix(ins)
+print(fitness_function(opt_tsp225,dist_matrix))
+plot_tsp_route(ins, opt_tsp225)
+```
